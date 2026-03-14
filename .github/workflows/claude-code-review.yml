@@ -8,7 +8,7 @@ on:
         type: string
         default: '["self-hosted", "linux"]'
       allowed-tools:
-        description: 'Claude allowed tools for review'
+        description: 'Comma-separated list of allowed tools'
         type: string
         default: 'Bash(gh pr:*),Bash(gh issue:*),Bash(gh api:*)'
       extra-prompt:
@@ -46,7 +46,7 @@ jobs:
           plugins: 'code-review@claude-code-plugins'
           track_progress: true
           use_sticky_comment: true
-          claude_args: '--allowed-tools ${{ inputs.allowed-tools }}'
+          claude_args: '--allowedTools "${{ inputs.allowed-tools }}"'
           prompt: >
             /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
             After posting your review, update pull request labels so exactly one of these labels is present:

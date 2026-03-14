@@ -8,9 +8,9 @@ on:
         type: string
         default: '["self-hosted", "linux"]'
       allowed-tools:
-        description: 'Claude allowed tools'
+        description: 'Comma-separated list of allowed tools'
         type: string
-        default: '"Bash(git *)" "Bash(gh *)" "Bash(npm *)" "Bash(python *)" "Bash(pytest *)" "Bash(pip *)" "Bash(ls *)" "Bash(mkdir *)" "Bash(cp *)" "Bash(mv *)" "Bash(wc *)" "Bash(rm *)" "Bash(touch *)" Edit Write Read Glob Grep Agent'
+        default: 'Bash(git *),Bash(gh *),Bash(npm *),Bash(python *),Bash(pytest *),Bash(pip *),Bash(ls *),Bash(mkdir *),Bash(cp *),Bash(mv *),Bash(wc *),Bash(rm *),Bash(touch *),Edit,Write,Read,Glob,Grep,Agent'
       extra-prompt:
         description: 'Additional repo-specific instructions'
         type: string
@@ -59,4 +59,4 @@ jobs:
             If changes are still needed, ensure "changes requested" is present and remove "approved for merge".
             If the pull request is ready to merge, ensure "approved for merge" is present and remove "changes requested".
             ${{ inputs.extra-prompt }}
-          claude_args: '--allowed-tools ${{ inputs.allowed-tools }}'
+          claude_args: '--allowedTools "${{ inputs.allowed-tools }}"'
