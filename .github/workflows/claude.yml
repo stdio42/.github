@@ -1,0 +1,62 @@
+name: Claude Code
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: 'Runner label(s) as JSON array'
+        type: string
+        default: '["self-hosted", "linux"]'
+      allowed-tools:
+        description: 'Claude allowed tools'
+        type: string
+        default: '"Bash(git *)" "Bash(gh *)" "Bash(npm *)" "Bash(python *)" "Bash(pytest *)" "Bash(pip *)" "Bash(ls *)" "Bash(mkdir *)" "Bash(cp *)" "Bash(mv *)" "Bash(wc *)" "Bash(rm *)" "Bash(touch *)" Edit Write Read Glob Grep Agent'
+      extra-prompt:
+        description: 'Additional repo-specific instructions'
+        type: string
+        default: ''
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          github_token: ${{ github.token }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          additional_permissions: |
+            actions: read
+          prompt: |
+            Follow and complete this request:
+            ${{ github.event.comment.body || github.event.review.body || github.event.issue.body || github.event.issue.title }}
+
+            If this run is in a pull request context, after completing the request, re-assess the pull request and update labels so exactly one of these labels is present:
+            - changes requested
+            - approved for merge
+
+            If changes are still needed, ensure "changes requested" is present and remove "approved for merge".
+            If the pull request is ready to merge, ensure "approved for merge" is present and remove "changes requested".
+            ${{ inputs.extra-prompt }}
+          claude_args: '--allowed-tools ${{ inputs.allowed-tools }}'

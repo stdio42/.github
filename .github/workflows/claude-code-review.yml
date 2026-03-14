@@ -1,0 +1,57 @@
+name: Claude Code Review
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: 'Runner label(s) as JSON array'
+        type: string
+        default: '["self-hosted", "linux"]'
+      allowed-tools:
+        description: 'Claude allowed tools for review'
+        type: string
+        default: 'Bash(gh pr:*),Bash(gh issue:*),Bash(gh api:*)'
+      extra-prompt:
+        description: 'Additional repo-specific review instructions'
+        type: string
+        default: ''
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+jobs:
+  claude-review:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        id: claude-review
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          github_token: ${{ github.token }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          track_progress: true
+          use_sticky_comment: true
+          claude_args: '--allowed-tools ${{ inputs.allowed-tools }}'
+          prompt: >
+            /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+            After posting your review, update pull request labels so exactly one of these labels is present:
+            "changes requested" or "approved for merge". If your review identifies blocking issues or requests
+            changes, add/update to "changes requested" and remove "approved for merge". If the pull request is
+            ready to merge with no requested changes, add/update to "approved for merge" and remove
+            "changes requested".
+            ${{ inputs.extra-prompt }}
