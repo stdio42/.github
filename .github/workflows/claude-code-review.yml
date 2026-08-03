@@ -15,6 +15,22 @@ on:
         description: 'Additional repo-specific review instructions'
         type: string
         default: ''
+      stack:
+        description: >-
+          Which shared ruleset to apply on top of review/core.md: the basename of
+          a file under review/ in this repo (currently "ios" or "flutter").
+          Empty = core rules only. An unknown value warns and falls back to core
+          rather than failing the review.
+        type: string
+        default: ''
+      require-linked-issue:
+        description: 'Blocking gate: the PR must reference an issue (Closes #123 / Fixes #123 / #123), else the review requests changes.'
+        type: boolean
+        default: false
+      require-checklist-complete:
+        description: 'Blocking gate: if the PR body has a task list, every item must be checked, else the review requests changes.'
+        type: boolean
+        default: false
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         required: true
@@ -35,6 +51,64 @@ jobs:
         with:
           fetch-depth: 1
 
+      # This repo is public, so a caller's default GITHUB_TOKEN can read it. That
+      # is what lets the rulesets be real files here instead of a heredoc copied
+      # into every consumer -- the workaround appstore-ci needed while its
+      # rulesets lived in a private repo on the free plan.
+      - name: Fetch shared review guidelines
+        uses: actions/checkout@v4
+        with:
+          repository: stdio42/.github
+          ref: main
+          path: .review-shared
+          fetch-depth: 1
+
+      - name: Assemble review guidelines
+        env:
+          STACK: ${{ inputs.stack }}
+          REQUIRE_LINKED_ISSUE: ${{ inputs.require-linked-issue }}
+          REQUIRE_CHECKLIST: ${{ inputs.require-checklist-complete }}
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/.review-guidelines.md"
+          cat .review-shared/review/core.md > "$OUT"
+          if [ -n "$STACK" ]; then
+            if [ -f ".review-shared/review/${STACK}.md" ]; then
+              cat ".review-shared/review/${STACK}.md" >> "$OUT"
+            else
+              # Warn rather than fail: a typo in one caller should not take that
+              # repo's reviews offline, and core rules still apply.
+              echo "::warning::no review/${STACK}.md in stdio42/.github - applying core guidelines only"
+            fi
+          fi
+
+          if [ "$REQUIRE_LINKED_ISSUE" = "true" ] || [ "$REQUIRE_CHECKLIST" = "true" ]; then
+            cat >> "$OUT" <<'HDR'
+
+          ## Mandatory gates (BLOCKING — these override the verdict)
+
+          A failing gate means the review MUST request changes, naming every gate
+          that failed, no matter how good the code is.
+          HDR
+          fi
+          if [ "$REQUIRE_LINKED_ISSUE" = "true" ]; then
+            cat >> "$OUT" <<'G1'
+          - **Linked issue required.** The PR title or body must reference a GitHub
+            issue (`Closes #123`, `Fixes #123`, or a bare `#123`).
+          G1
+          fi
+          if [ "$REQUIRE_CHECKLIST" = "true" ]; then
+            cat >> "$OUT" <<'G2'
+          - **Checklist complete.** If the PR body contains a task list, every item
+            must be checked (`- [x]`). List any that are not.
+          G2
+          fi
+
+          # Leave the caller's tree clean: a stray checkout directory shows up as
+          # untracked files and muddies what the reviewer is looking at.
+          rm -rf .review-shared
+          echo "assembled $(wc -l < "$OUT") lines of guidelines (stack='${STACK:-none}')"
+
       - name: Run Claude Code Review
         id: claude-review
         continue-on-error: true
@@ -49,6 +123,13 @@ jobs:
           claude_args: '--allowedTools "${{ inputs.allowed-tools }}"'
           prompt: >
             /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+            In addition to the plugin's default checks, apply the shared review
+            guidelines in `.review-guidelines.md` at the repository root, and cite
+            any violations. That file is generated for this run and is not part of
+            the diff under review - do not review it.
+            If it contains a "## Mandatory gates" section, those gates are blocking:
+            when one fails you MUST request changes and name every failing gate,
+            regardless of how good the code is.
             After posting your review, update pull request labels so exactly one of these labels is present:
             "changes requested" or "approved for merge". If your review identifies blocking issues or requests
             changes, add/update to "changes requested" and remove "approved for merge". If the pull request is
