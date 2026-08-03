@@ -3,8 +3,9 @@
 Org-wide defaults. The two workflows here are **reusable** (`on: workflow_call`)
 — they do nothing on their own; repos call them.
 
-    .github/workflows/claude-code-review.yml   PR review
-    .github/workflows/claude.yml               @claude responder
+    .github/workflows/claude-code-review.yml   PR review (reusable)
+    .github/workflows/claude.yml               @claude responder (reusable)
+    .github/workflows/self-review.yml          runs the above on this repo's own PRs
     review/prompt.md                           what the reviewer is told to do
     review/core.md                             rules applied to every repo
     review/ios.md                              stack overlay: iOS / tvOS

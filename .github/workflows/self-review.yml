@@ -1,0 +1,21 @@
+name: Claude Code Review
+
+# This repo defines the org's review workflow but was not running it on its own
+# pull requests, so changes to the shared ruleset and prompt merged unreviewed.
+# Calls its own reusable workflow with a local `./` reference, which resolves to
+# this branch -- meaning a PR that changes the review logic is reviewed by the
+# version it proposes.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    uses: ./.github/workflows/claude-code-review.yml
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
