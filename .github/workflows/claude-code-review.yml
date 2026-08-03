@@ -63,8 +63,11 @@ jobs:
           path: .review-shared
           fetch-depth: 1
 
-      - name: Assemble review guidelines
+      - name: Assemble review guidelines and prompt
+        id: assemble
         env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXTRA_PROMPT: ${{ inputs.extra-prompt }}
           STACK: ${{ inputs.stack }}
           REQUIRE_LINKED_ISSUE: ${{ inputs.require-linked-issue }}
           REQUIRE_CHECKLIST: ${{ inputs.require-checklist-complete }}
@@ -108,6 +111,17 @@ jobs:
           G2
           fi
 
+          # The prompt is a shared file too, so review behaviour is edited in one
+          # place alongside the rulesets rather than inlined in this workflow.
+          {
+            echo "text<<ZPROMPT_EOF"
+            echo "/code-review:code-review ${GITHUB_REPOSITORY}/pull/${PR_NUMBER}"
+            echo
+            cat .review-shared/review/prompt.md
+            [ -n "$EXTRA_PROMPT" ] && { echo; echo "$EXTRA_PROMPT"; }
+            echo "ZPROMPT_EOF"
+          } >> "$GITHUB_OUTPUT"
+
           # Leave the caller's tree clean: a stray checkout directory shows up as
           # untracked files and muddies what the reviewer is looking at.
           rm -rf .review-shared
@@ -125,18 +139,4 @@ jobs:
           track_progress: true
           use_sticky_comment: true
           claude_args: '--allowedTools "${{ inputs.allowed-tools }}"'
-          prompt: >
-            /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
-            In addition to the plugin's default checks, apply the shared review
-            guidelines in `.review-guidelines.md` at the repository root, and cite
-            any violations. That file is generated for this run and is not part of
-            the diff under review - do not review it.
-            If it contains a "## Mandatory gates" section, those gates are blocking:
-            when one fails you MUST request changes and name every failing gate,
-            regardless of how good the code is.
-            After posting your review, update pull request labels so exactly one of these labels is present:
-            "changes requested" or "approved for merge". If your review identifies blocking issues or requests
-            changes, add/update to "changes requested" and remove "approved for merge". If the pull request is
-            ready to merge with no requested changes, add/update to "approved for merge" and remove
-            "changes requested".
-            ${{ inputs.extra-prompt }}
+          prompt: ${{ steps.assemble.outputs.text }}
