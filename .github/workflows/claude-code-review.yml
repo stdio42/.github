@@ -74,6 +74,10 @@ jobs:
           cat .review-shared/review/core.md > "$OUT"
           if [ -n "$STACK" ]; then
             if [ -f ".review-shared/review/${STACK}.md" ]; then
+              # Blank line first: CommonMark folds an ATX heading into the
+              # preceding paragraph without one, which would run the two
+              # rulesets together instead of keeping them distinct sections.
+              printf '\n' >> "$OUT"
               cat ".review-shared/review/${STACK}.md" >> "$OUT"
             else
               # Warn rather than fail: a typo in one caller should not take that
