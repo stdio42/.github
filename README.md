@@ -25,7 +25,8 @@ on:
 jobs:
   review:
     uses: stdio42/.github/.github/workflows/claude-code-review.yml@main
-    secrets: inherit
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     with:
       stack: flutter        # omit for core rules only
 ```
@@ -42,12 +43,18 @@ on:
 jobs:
   claude:
     uses: stdio42/.github/.github/workflows/claude.yml@main
-    secrets: inherit
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 ```
 
-Each repo still needs its own `CLAUDE_CODE_OAUTH_TOKEN` secret. `secrets: inherit`
-passes the *caller's* secrets, and org-level secrets need Team/Enterprise for
-private repos — stdio42 is on the free plan, so per-repo is the only option:
+Pass the token explicitly rather than `secrets: inherit`. These workflows declare
+exactly one required secret and act on PR, issue and comment text that anyone can
+influence; `inherit` would hand them every secret the calling repo holds, for no
+functional gain.
+
+Each repo still needs its own `CLAUDE_CODE_OAUTH_TOKEN`. Org-level secrets need
+Team/Enterprise for private repos and stdio42 is on the free plan, so per-repo is
+the only option:
 
 ```sh
 gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo stdio42/<repo>
@@ -63,6 +70,13 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo stdio42/<repo>
 | `extra-prompt` | `''` | Repo-specific instructions appended to the prompt. |
 | `require-linked-issue` | `false` | Blocking gate: PR must reference an issue. |
 | `require-checklist-complete` | `false` | Blocking gate: every task-list item checked. |
+
+## Responder permissions
+
+`claude.yml` runs with `contents: write`, `issues: write`, `pull-requests: write`
+— it can push to PR branches, not just comment. A repo that deliberately keeps
+its `@claude` responder read-only (for isolation from the cluster, say) cannot
+express that here and should keep its responder inline. `kitten-quest` does.
 
 ## Adding a stack
 
