@@ -20,6 +20,13 @@ on:
         description: 'Additional repo-specific review instructions'
         type: string
         default: ''
+      claude-args:
+        description: >-
+          Extra arguments appended to claude_args, e.g. '--model
+          claude-sonnet-4-6'. Repos that pinned a model in their own workflow
+          need this to keep it; without it the action takes its default.
+        type: string
+        default: ''
       stack:
         description: >-
           Which shared ruleset to apply on top of review/core.md: the basename of
@@ -134,7 +141,10 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
-        continue-on-error: true
+        # Deliberately NOT continue-on-error. With it, an action that dies --
+        # missing token, bad input, API failure -- still reported the job as
+        # success, so a review that never happened was indistinguishable from
+        # a clean one. A red check is noisier and honest.
         uses: anthropics/claude-code-action@v1
         with:
           github_token: ${{ github.token }}
@@ -143,5 +153,5 @@ jobs:
           plugins: 'code-review@claude-code-plugins'
           track_progress: true
           use_sticky_comment: true
-          claude_args: '--allowedTools "${{ inputs.allowed-tools }}"'
+          claude_args: '--allowedTools "${{ inputs.allowed-tools }}" ${{ inputs.claude-args }}'
           prompt: ${{ steps.assemble.outputs.text }}

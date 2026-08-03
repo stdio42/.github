@@ -69,6 +69,7 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo stdio42/<repo>
 | `runs-on` | `["self-hosted", "linux"]` | Runner labels. Be specific where a fleet mixes platforms, so a review never starves the shared macOS build runner. |
 | `allowed-tools` | `gh pr/issue/api` | Passed to `--allowedTools`. |
 | `extra-prompt` | `''` | Repo-specific instructions appended to the prompt. |
+| `claude-args` | `''` | Appended to `claude_args`, e.g. `--model claude-sonnet-4-6`. |
 | `require-linked-issue` | `false` | Blocking gate: PR must reference an issue. |
 | `require-checklist-complete` | `false` | Blocking gate: every task-list item checked. |
 
