@@ -5,6 +5,7 @@ Org-wide defaults. The two workflows here are **reusable** (`on: workflow_call`)
 
     .github/workflows/claude-code-review.yml   PR review
     .github/workflows/claude.yml               @claude responder
+    review/prompt.md                           what the reviewer is told to do
     review/core.md                             rules applied to every repo
     review/ios.md                              stack overlay: iOS / tvOS
     review/flutter.md                          stack overlay: Flutter / Dart
