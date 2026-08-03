@@ -8,9 +8,14 @@ on:
         type: string
         default: '["self-hosted", "linux"]'
       allowed-tools:
-        description: 'Comma-separated list of allowed tools'
+        description: >-
+          Comma-separated --allowedTools list. `Bash(gh pr review:*)` is spelled
+          out rather than left to the `Bash(gh pr:*)` prefix, because if that
+          match ever fails the verdict does not error -- it just never gets
+          submitted, which looks identical to a clean review. This is the form
+          stdio42/jojo has been submitting real approvals with.
         type: string
-        default: 'Bash(gh pr:*),Bash(gh issue:*),Bash(gh api:*)'
+        default: 'Bash(gh pr review:*),Bash(gh pr view:*),Bash(gh pr:*),Bash(gh issue:*),Bash(gh api:*)'
       extra-prompt:
         description: 'Additional repo-specific review instructions'
         type: string
