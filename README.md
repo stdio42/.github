@@ -73,6 +73,28 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo stdio42/<repo>
 | `claude-args` | `''` | Appended to `claude_args`, e.g. `--model claude-sonnet-4-6`. |
 | `require-linked-issue` | `false` | Blocking gate: PR must reference an issue. |
 | `require-checklist-complete` | `false` | Blocking gate: every task-list item checked. |
+| `allowed-bots` | `''` | Bot actors whose PRs may be reviewed, or `*` for all. **Set to `github-actions` in any repo that also runs `claude.yml`** — see below. |
+
+## Running both workflows in one repo
+
+A repo that runs `claude.yml` alongside `claude-code-review.yml` has a gap by
+default: PRs the responder opens are authored by `app/github-actions`, and the
+review action refuses non-human actors outright —
+
+```text
+Workflow initiated by non-human actor: github-actions (type: Bot).
+Add bot to allowed_bots list or use '*' to allow all bots.
+```
+
+So the responder raises pull requests that the reviewer never looks at, and the
+failure is quiet unless someone checks the run. Pass `allowed-bots: github-actions`
+in the review caller to close it.
+
+There is a second, separate gate GitHub itself applies: runs on bot-authored PRs
+land in `action_required` and wait for a human to approve them under Actions →
+"Approve and run". `allowed-bots` does not remove that — it is repo policy, not
+action config. Expect one click per responder PR unless the repo's Actions
+approval setting is relaxed.
 
 ## Responder permissions
 
