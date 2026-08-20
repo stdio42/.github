@@ -98,10 +98,13 @@ runs:
         echo "s3-uri=${DEST}" >> "$GITHUB_OUTPUT"
 
         # A glob must expand here; quoting IN_PATH would upload a literal '*'.
-        shopt -s nullglob
+        # globstar matters: actions/upload-artifact treats '**' as recursive, and
+        # plain bash does not -- without it 'out/**/x.log' quietly matches only one
+        # level down and deeper files are missed with no error.
+        shopt -s nullglob globstar
         # shellcheck disable=SC2206
         MATCHES=( ${IN_PATH} )
-        shopt -u nullglob
+        shopt -u nullglob globstar
 
         if [ ${#MATCHES[@]} -eq 0 ]; then
           MSG="no files matched path '${IN_PATH}'"
