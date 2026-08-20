@@ -56,6 +56,10 @@ ok "$(grep -c 's3://b/o/r/1/art/d1/' "$TMP/calls.log")" 1 "multiple dirs disambi
 run art '*.diff'
 ok "$(wc -l < "$TMP/calls.log")" 2 "glob uploads every match"
 
+mkdir -p deep/a/b; echo x > deep/a/one.log; echo y > deep/a/b/two.log
+run art 'deep/**/*.log'
+ok "$(wc -l < "$TMP/calls.log")" 2 "** recurses more than one level (needs globstar)"
+
 run art 'no-such-*' error;  ok "$RC" 1 "if-no-files-found=error fails the step"
 run art 'no-such-*' ignore; ok "$RC" 0 "if-no-files-found=ignore passes"
 run art 'no-such-*' warn;   ok "$RC" 0 "if-no-files-found=warn passes"
