@@ -1,0 +1,140 @@
+name: 'Upload artifacts to S3'
+description: >-
+  Drop-in replacement for actions/upload-artifact. Stores build output in the
+  org's Ceph/RGW S3 instead of GitHub artifact storage, which is capped on the
+  free plan and, once full, fails every upload org-wide with
+  "Artifact storage quota has been hit".
+
+inputs:
+  name:
+    description: 'Artifact name. Becomes a path segment in the S3 key, so keep it filesystem-safe.'
+    required: true
+  path:
+    description: 'File, directory, or shell glob to upload. A directory uploads recursively.'
+    required: true
+  access-key-id:
+    description: 'Pass ${{ secrets.S3_ACCESS_KEY }}. Composite actions cannot read secrets themselves.'
+    required: true
+  secret-access-key:
+    description: 'Pass ${{ secrets.S3_SECRET_KEY }}.'
+    required: true
+  bucket:
+    description: 'Target bucket. Use public-artifacts only for output meant to be world-readable.'
+    required: false
+    default: 'github-artifacts'
+  endpoint:
+    description: 'S3 endpoint.'
+    required: false
+    default: 'https://s3.sd.kazer.org'
+  if-no-files-found:
+    description: 'warn | error | ignore — mirrors actions/upload-artifact.'
+    required: false
+    default: 'warn'
+
+outputs:
+  s3-uri:
+    description: 'The s3:// prefix the files were written to.'
+    value: ${{ steps.upload.outputs.s3-uri }}
+
+runs:
+  using: composite
+  steps:
+    # Many callers run inside `container:` jobs built from slim images that have
+    # no aws CLI, so installing it is the action's job rather than every caller's.
+    # Debian's `awscli` is v1, which is fine: --endpoint-url has been supported
+    # since v1 and nothing here uses a v2-only flag.
+    - name: Ensure aws CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v aws >/dev/null 2>&1; then
+          echo "aws present: $(aws --version 2>&1)"
+          exit 0
+        fi
+        echo "aws not found; installing"
+        SUDO=""
+        [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+        if command -v apt-get >/dev/null 2>&1; then
+          $SUDO apt-get update -qq && $SUDO apt-get install -y -qq awscli
+        elif command -v apk >/dev/null 2>&1; then
+          $SUDO apk add --no-cache aws-cli
+        elif command -v dnf >/dev/null 2>&1; then
+          $SUDO dnf install -y -q awscli
+        elif command -v yum >/dev/null 2>&1; then
+          $SUDO yum install -y -q awscli
+        elif command -v pip3 >/dev/null 2>&1; then
+          pip3 install --quiet --disable-pip-version-check awscli
+        elif command -v brew >/dev/null 2>&1; then
+          brew install awscli
+        else
+          echo "::error::no supported package manager found to install the aws CLI"
+          exit 1
+        fi
+        aws --version 2>&1
+
+    - name: Upload to S3
+      id: upload
+      shell: bash
+      env:
+        AWS_ACCESS_KEY_ID: ${{ inputs.access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.secret-access-key }}
+        IN_PATH: ${{ inputs.path }}
+        IN_NAME: ${{ inputs.name }}
+        BUCKET: ${{ inputs.bucket }}
+        ENDPOINT: ${{ inputs.endpoint }}
+        ON_MISSING: ${{ inputs.if-no-files-found }}
+      run: |
+        set -uo pipefail
+
+        if [ -z "${AWS_ACCESS_KEY_ID}" ] || [ -z "${AWS_SECRET_ACCESS_KEY}" ]; then
+          echo "::error::S3 credentials are empty. Pass access-key-id/secret-access-key from secrets.S3_ACCESS_KEY / secrets.S3_SECRET_KEY, and check the repo actually has them set."
+          exit 1
+        fi
+
+        # Same layout as the pre-existing hand-rolled uploads in r2d2-solidworks,
+        # plus the artifact name so one run's separate artifacts stay separate.
+        PREFIX="${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${IN_NAME}"
+        DEST="s3://${BUCKET}/${PREFIX}"
+        echo "s3-uri=${DEST}" >> "$GITHUB_OUTPUT"
+
+        # A glob must expand here; quoting IN_PATH would upload a literal '*'.
+        shopt -s nullglob
+        # shellcheck disable=SC2206
+        MATCHES=( ${IN_PATH} )
+        shopt -u nullglob
+
+        if [ ${#MATCHES[@]} -eq 0 ]; then
+          MSG="no files matched path '${IN_PATH}'"
+          case "${ON_MISSING}" in
+            error)  echo "::error::${MSG}"; exit 1 ;;
+            ignore) echo "${MSG} (ignored)"; exit 0 ;;
+            *)      echo "::warning::${MSG}"; exit 0 ;;
+          esac
+        fi
+
+        rc=0
+        for m in "${MATCHES[@]}"; do
+          if [ -d "$m" ]; then
+            # A single directory uploads its CONTENTS under the artifact name, matching
+            # actions/upload-artifact. Adding basename here would nest it twice
+            # (.../<name>/<name>/...). With several matches the basename is what keeps
+            # them apart, so it is only added then.
+            if [ ${#MATCHES[@]} -eq 1 ]; then SUB=""; else SUB="$(basename "$m")/"; fi
+            echo "uploading directory $m -> ${DEST}/${SUB}"
+            aws s3 cp "$m" "${DEST}/${SUB}" \
+              --recursive --only-show-errors --endpoint-url "${ENDPOINT}" || rc=$?
+          else
+            echo "uploading file $m -> ${DEST}/"
+            aws s3 cp "$m" "${DEST}/$(basename "$m")" \
+              --only-show-errors --endpoint-url "${ENDPOINT}" || rc=$?
+          fi
+        done
+
+        if [ "$rc" -ne 0 ]; then
+          echo "::error::upload to ${DEST} failed (exit $rc)"
+          exit "$rc"
+        fi
+
+        # The clickable artifact link is gone, so print where things landed.
+        echo "::notice::artifacts at ${DEST}"
+        echo "Uploaded ${#MATCHES[@]} path(s) to ${DEST}"

@@ -103,6 +103,40 @@ approval setting is relaxed.
 its `@claude` responder read-only (for isolation from the cluster, say) cannot
 express that here and should keep its responder inline. `kitten-quest` does.
 
+## Artifacts: never `actions/upload-artifact`
+
+GitHub artifact storage is capped on this org's free plan, and when it fills it
+does not degrade — it fails **every** upload across **every** repo with
+`Failed to CreateArtifact: Artifact storage quota has been hit`, and usage is
+only recalculated every 6–12 hours. One repo's nightly build can take the whole
+org's CI red. Use the org S3 (Ceph RGW) instead:
+
+```yaml
+- uses: stdio42/.github/actions/upload-s3@main
+  if: always()
+  with:
+    name: test-results
+    path: build/reports
+    access-key-id: ${{ secrets.S3_ACCESS_KEY }}
+    secret-access-key: ${{ secrets.S3_SECRET_KEY }}
+```
+
+Drop-in for `actions/upload-artifact`: same `name`/`path`/`if-no-files-found`,
+and `path` takes a file, a directory, or a glob. Credentials are **inputs, not
+secrets** — a composite action cannot read `secrets` itself, so the caller must
+pass them, and the repo needs `S3_ACCESS_KEY` / `S3_SECRET_KEY` set.
+
+Lands at `s3://github-artifacts/<owner>/<repo>/<run_id>/<name>/`, and prints the
+URI as a run annotation since there is no clickable artifact link any more. Pass
+`bucket: public-artifacts` only for output meant to be world-readable.
+
+The action installs the aws CLI if the runner or container lacks it (apt/apk/
+dnf/yum/pip/brew), so it works inside the slim `container:` images the navit
+builds use.
+
+Path handling has a self-check that needs no credentials or network:
+`./actions/upload-s3/test.sh`.
+
 ## Adding a stack
 
 Drop `review/<name>.md` in this repo and pass `stack: <name>`. No workflow change
