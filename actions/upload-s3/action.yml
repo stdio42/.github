@@ -13,10 +13,10 @@ inputs:
     description: 'File, directory, or shell glob to upload. A directory uploads recursively.'
     required: true
   access-key-id:
-    description: 'Pass ${{ secrets.S3_ACCESS_KEY }}. Composite actions cannot read secrets themselves.'
+    description: 'Pass the S3 access key from secrets.S3_ACCESS_KEY. Composite actions cannot read secrets themselves.'
     required: true
   secret-access-key:
-    description: 'Pass ${{ secrets.S3_SECRET_KEY }}.'
+    description: 'Pass the S3 secret key from secrets.S3_SECRET_KEY.'
     required: true
   bucket:
     description: 'Target bucket. Use public-artifacts only for output meant to be world-readable.'
