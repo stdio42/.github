@@ -1,0 +1,17 @@
+name: tests
+
+# This repo is composite actions and reusable workflows — nothing compiles, so
+# this is the only guard on the shell embedded in them. Add to it rather than
+# leaving new embedded logic untested.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+      - run: for t in tests/test-*.sh; do echo "--- $t"; "$t"; done
