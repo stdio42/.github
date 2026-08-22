@@ -11,7 +11,12 @@ on:
 
 jobs:
   tests:
-    runs-on: [self-hosted, linux]
+    # ubuntu-latest, not the org's self-hosted linux pool: this repo is PUBLIC,
+    # and the runner group has allows_public_repositories = false, so a
+    # self-hosted job here is never picked up -- it queues for 24h and GitHub
+    # cancels it. That is why every run in this repo's history is "cancelled".
+    # GitHub-hosted minutes are free for public repos.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: for t in tests/test-*.sh; do echo "--- $t"; "$t"; done
