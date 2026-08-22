@@ -101,10 +101,26 @@ runs:
         # globstar matters: actions/upload-artifact treats '**' as recursive, and
         # plain bash does not -- without it 'out/**/x.log' quietly matches only one
         # level down and deeper files are missed with no error.
-        shopt -s nullglob globstar
+        #
+        # macOS ships bash 3.2, which predates globstar, and GitHub runs `run:`
+        # blocks with `bash -e` -- so `shopt -s globstar` did not degrade, it killed
+        # the step outright, and this action had never once worked on a macOS runner.
+        # Ask for it, carry on without it, and refuse only when the path actually
+        # needs it: silently uploading a subset would be worse than failing.
+        shopt -s nullglob
+        HAVE_GLOBSTAR=1
+        shopt -s globstar 2>/dev/null || HAVE_GLOBSTAR=0
+        if [ "${HAVE_GLOBSTAR}" -eq 0 ]; then
+          case "${IN_PATH}" in
+            *'**'*)
+              echo "::error::path '${IN_PATH}' uses '**', but bash ${BASH_VERSION} has no globstar (macOS ships 3.2). Name the directory instead -- a directory uploads recursively."
+              exit 1 ;;
+          esac
+        fi
         # shellcheck disable=SC2206
         MATCHES=( ${IN_PATH} )
-        shopt -u nullglob globstar
+        shopt -u nullglob
+        if [ "${HAVE_GLOBSTAR}" -eq 1 ]; then shopt -u globstar; fi
 
         if [ ${#MATCHES[@]} -eq 0 ]; then
           MSG="no files matched path '${IN_PATH}'"
