@@ -64,6 +64,10 @@ run art 'no-such-*' error;  ok "$RC" 1 "if-no-files-found=error fails the step"
 run art 'no-such-*' ignore; ok "$RC" 0 "if-no-files-found=ignore passes"
 run art 'no-such-*' warn;   ok "$RC" 0 "if-no-files-found=warn passes"
 
+run art no-such-dir warn
+ok "$RC/$(wc -l < "$TMP/calls.log")" 0/0 "missing plain path warns instead of handing aws a bad path"
+run art no-such-dir error;  ok "$RC" 1 "missing plain path honours if-no-files-found=error"
+
 export CALLS="$TMP/calls.log"; : > "$CALLS"
 PATH="$TMP/bin:$PATH" GITHUB_REPOSITORY=o/r GITHUB_RUN_ID=1 GITHUB_OUTPUT="$TMP/out" \
 AWS_ACCESS_KEY_ID="" AWS_SECRET_ACCESS_KEY=s BUCKET=b ENDPOINT=https://e \
