@@ -55,7 +55,15 @@ runs:
         SUDO=""
         [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO="sudo"
         if command -v apt-get >/dev/null 2>&1; then
-          $SUDO apt-get update -qq && $SUDO apt-get install -y -qq awscli
+          $SUDO apt-get update -qq
+          # Ubuntu 24.04+ has no awscli package ("no installation candidate"):
+          # use AWS's own v2 installer there.
+          if ! $SUDO apt-get install -y -qq awscli; then
+            $SUDO apt-get install -y -qq curl unzip ca-certificates
+            curl -sSfL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip
+            unzip -qo /tmp/awscliv2.zip -d /tmp
+            $SUDO /tmp/aws/install --update
+          fi
         elif command -v apk >/dev/null 2>&1; then
           $SUDO apk add --no-cache aws-cli
         elif command -v dnf >/dev/null 2>&1; then
