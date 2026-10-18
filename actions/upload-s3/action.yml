@@ -130,6 +130,16 @@ runs:
         shopt -u nullglob
         if [ "${HAVE_GLOBSTAR}" -eq 1 ]; then shopt -u globstar; fi
 
+        # A path with no glob characters survives nullglob even when it does not
+        # exist, and aws then fails the step on it. Drop it so if-no-files-found
+        # decides, as in actions/upload-artifact. (The ${a[@]+...} form keeps an
+        # empty array safe under set -u on bash 3.2.)
+        EXISTING=()
+        for m in ${MATCHES[@]+"${MATCHES[@]}"}; do
+          if [ -e "$m" ]; then EXISTING+=("$m"); fi
+        done
+        MATCHES=(${EXISTING[@]+"${EXISTING[@]}"})
+
         if [ ${#MATCHES[@]} -eq 0 ]; then
           MSG="no files matched path '${IN_PATH}'"
           case "${ON_MISSING}" in
