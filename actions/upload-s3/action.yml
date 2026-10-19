@@ -195,6 +195,17 @@ runs:
         # the bucket). So check that every file is there at its local size.
         # ponytail: a re-run attempt shares GITHUB_RUN_ID, so a same-size object
         # left by the previous attempt would pass; compare ETags if that matters.
+        #
+        # Files are keyed by basename, so 'out/**/x.log' maps every x.log to one
+        # key and the last upload wins. That was already the behaviour; keep it
+        # (verify the last writer) but say so, since it silently drops files.
+        DUPS="$(cut -f1 "$EXPECTED" | LC_ALL=C sort | uniq -d)"
+        if [ -n "$DUPS" ]; then
+          echo "::warning::$(printf '%s\n' "$DUPS" | wc -l | tr -d ' ') key(s) matched by several files; only the last upload of each is kept. Upload the directory instead to keep them all: $(printf '%s' "$DUPS" | tr '\n' ' ' | cut -c1-500)"
+          awk -F'\t' '{ last[$1] = $2 } END { for (k in last) print k "\t" last[k] }' "$EXPECTED" > "$LISTED"
+          mv "$LISTED" "$EXPECTED"
+        fi
+
         if ! aws s3 ls "${DEST}/" --recursive --endpoint-url "${ENDPOINT}" > "$LISTED"; then
           echo "::error::could not list ${DEST} to verify the upload"
           exit 1

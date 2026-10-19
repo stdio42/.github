@@ -81,6 +81,10 @@ mkdir -p deep/a/b; echo x > deep/a/one.log; echo y > deep/a/b/two.log
 run art 'deep/**/*.log'
 ok "$(wc -l < "$TMP/calls.log")" 2 "** recurses more than one level (needs globstar)"
 
+mkdir -p dup/a dup/b; echo short > dup/a/p.log; echo much-longer > dup/b/p.log
+run art 'dup/**/p.log'
+ok "$RC" 0 "same-basename matches keep the old last-one-wins result instead of failing"
+
 STUB_DROP=1 run art reports
 ok "$RC" 1 "aws exiting 0 without storing anything fails the step"
 STUB_DROP=1 run art single.log
