@@ -19,8 +19,21 @@ mkdir -p "$TMP/bin"
 cat > "$TMP/bin/aws" <<'STUB'
 #!/bin/bash
 [ "$1" = "--version" ] && { echo "aws-cli/1.0 (stub)"; exit 0; }
+# A local stand-in for the bucket: s3://<bucket>/<key> lives at $STORE/<bucket>/<key>.
+if [ "$2" = "ls" ]; then
+  p="${3#s3://}"; p="${p%/}"
+  [ -d "$STORE/$p" ] || exit 0
+  (cd "$STORE" && find "$p" -type f) | while IFS= read -r k; do
+    printf '2026-01-01 00:00:00 %10s %s\n' "$(wc -c < "$STORE/$k" | tr -d ' ')" "${k#*/}"
+  done
+  exit 0
+fi
 echo "$*" >> "$CALLS"
-exit 0
+# aws-cli 2.36 after a no-response timeout: exit 0, nothing stored.
+[ -n "${STUB_DROP:-}" ] && exit 0
+dst="$STORE/${4#s3://}"
+if [ "$5" = "--recursive" ]; then mkdir -p "$dst" && cp -RL "$3"/. "$dst"/
+else mkdir -p "$(dirname "$dst")" && cp -L "$3" "$dst"; fi
 STUB
 chmod +x "$TMP/bin/aws"
 
@@ -37,8 +50,9 @@ echo e > d1/a; echo f > d2/b
 fails=0
 run() { # run <name> <path> [if-no-files-found]
   export CALLS="$TMP/calls.log"; : > "$CALLS"
+  export STORE="$TMP/store"; rm -rf "$STORE"
   PATH="$TMP/bin:$PATH" GITHUB_REPOSITORY=o/r GITHUB_RUN_ID=1 GITHUB_OUTPUT="$TMP/out" \
-  AWS_ACCESS_KEY_ID=k AWS_SECRET_ACCESS_KEY=s BUCKET=b ENDPOINT=https://e \
+  AWS_ACCESS_KEY_ID=k AWS_SECRET_ACCESS_KEY=s BUCKET=b ENDPOINT=https://e RUNNER_TEMP="$TMP" \
   IN_NAME="$1" IN_PATH="$2" ON_MISSING="${3:-warn}" bash "$TMP/upload.sh" >/dev/null 2>&1
   RC=$?
 }
@@ -46,12 +60,19 @@ ok() { if [ "$1" = "$2" ]; then echo "  ok: $3"; else echo "  FAIL: $3 (got '$1'
 
 run art single.log
 ok "$(grep -c 's3://b/o/r/1/art/single.log' "$TMP/calls.log")" 1 "file keeps its basename"
+ok "$RC" 0 "uploaded file verifies"
 
+mkdir -p reports/sub; echo nested > reports/sub/r2.txt; : > reports/empty.txt
+ln -s r1.txt reports/link.txt
 run art reports
 ok "$(grep -c 's3://b/o/r/1/art/ --recursive' "$TMP/calls.log")" 1 "lone directory is not nested under its own name"
+ok "$RC" 0 "uploaded directory verifies (nested, empty, symlinked files)"
+run art reports/
+ok "$RC" 0 "trailing slash on a directory verifies"
 
 run art 'd?'
 ok "$(grep -c 's3://b/o/r/1/art/d1/' "$TMP/calls.log")" 1 "multiple dirs disambiguated by basename"
+ok "$RC" 0 "multiple dirs verify"
 
 run art '*.diff'
 ok "$(wc -l < "$TMP/calls.log")" 2 "glob uploads every match"
@@ -59,6 +80,20 @@ ok "$(wc -l < "$TMP/calls.log")" 2 "glob uploads every match"
 mkdir -p deep/a/b; echo x > deep/a/one.log; echo y > deep/a/b/two.log
 run art 'deep/**/*.log'
 ok "$(wc -l < "$TMP/calls.log")" 2 "** recurses more than one level (needs globstar)"
+
+mkdir -p dup/a dup/b; echo short > dup/a/p.log; echo much-longer > dup/b/p.log
+run art 'dup/**/p.log'
+ok "$RC" 0 "same-basename matches keep the old last-one-wins result instead of failing"
+
+STUB_DROP=1 run art reports
+ok "$RC" 1 "aws exiting 0 without storing anything fails the step"
+STUB_DROP=1 run art single.log
+ok "$RC" 1 "a dropped single file fails the step"
+
+ok "$(python3 -c "
+import yaml
+print(yaml.safe_load(open('$HERE/action.yml'))['runs']['steps'][1]['env'].get('AWS_EC2_METADATA_DISABLED'))
+")" true "IMDS lookups are off (aws-cli v2 spends ~6 s on them per call)"
 
 run art 'no-such-*' error;  ok "$RC" 1 "if-no-files-found=error fails the step"
 run art 'no-such-*' ignore; ok "$RC" 0 "if-no-files-found=ignore passes"

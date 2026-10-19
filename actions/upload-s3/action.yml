@@ -91,6 +91,11 @@ runs:
         BUCKET: ${{ inputs.bucket }}
         ENDPOINT: ${{ inputs.endpoint }}
         ON_MISSING: ${{ inputs.if-no-files-found }}
+        # With no region configured, aws-cli v2 asks the EC2 metadata service
+        # for one on every client it builds -- 2 s of connect timeouts each,
+        # ~6 s per `aws s3` call on our runners, for an endpoint that is not AWS.
+        # Credentials always come from the env above, so nothing needs IMDS.
+        AWS_EC2_METADATA_DISABLED: 'true'
       run: |
         set -uo pipefail
 
@@ -149,6 +154,11 @@ runs:
           esac
         fi
 
+        # "<key><TAB><size>" for every file that should end up in the bucket.
+        EXPECTED="$(mktemp "${RUNNER_TEMP:-/tmp}/upload-s3.XXXXXX")"
+        LISTED="$(mktemp "${RUNNER_TEMP:-/tmp}/upload-s3.XXXXXX")"
+        trap 'rm -f "$EXPECTED" "$LISTED"' EXIT
+
         rc=0
         for m in "${MATCHES[@]}"; do
           if [ -d "$m" ]; then
@@ -160,16 +170,52 @@ runs:
             echo "uploading directory $m -> ${DEST}/${SUB}"
             aws s3 cp "$m" "${DEST}/${SUB}" \
               --recursive --only-show-errors --endpoint-url "${ENDPOINT}" || rc=$?
+            # -L: aws follows symlinks by default, and skips broken ones and FIFOs.
+            d="${m%/}"
+            find -L "$d" -type f | while IFS= read -r f; do
+              printf '%s\t%s\n' "${PREFIX}/${SUB}${f#"$d"/}" "$(wc -c < "$f" | tr -d ' ')"
+            done >> "$EXPECTED"
           else
             echo "uploading file $m -> ${DEST}/"
             aws s3 cp "$m" "${DEST}/$(basename "$m")" \
               --only-show-errors --endpoint-url "${ENDPOINT}" || rc=$?
+            printf '%s\t%s\n' "${PREFIX}/$(basename "$m")" "$(wc -c < "$m" | tr -d ' ')" >> "$EXPECTED"
           fi
         done
 
         if [ "$rc" -ne 0 ]; then
           echo "::error::upload to ${DEST} failed (exit $rc)"
           exit "$rc"
+        fi
+
+        # The exit code alone is not proof. aws-cli 2.36 exits 0 when every attempt
+        # got no HTTP response: the failure handler hits an AttributeError on the
+        # missing response and the error is swallowed. stdio42/jojo's nightly
+        # "uploaded" that way (3 x 60 s read timeouts, then success, nothing in
+        # the bucket). So check that every file is there at its local size.
+        # ponytail: a re-run attempt shares GITHUB_RUN_ID, so a same-size object
+        # left by the previous attempt would pass; compare ETags if that matters.
+        #
+        # Files are keyed by basename, so 'out/**/x.log' maps every x.log to one
+        # key and the last upload wins. That was already the behaviour; keep it
+        # (verify the last writer) but say so, since it silently drops files.
+        DUPS="$(cut -f1 "$EXPECTED" | LC_ALL=C sort | uniq -d)"
+        if [ -n "$DUPS" ]; then
+          echo "::warning::$(printf '%s\n' "$DUPS" | wc -l | tr -d ' ') key(s) matched by several files; only the last upload of each is kept. Upload the directory instead to keep them all: $(printf '%s' "$DUPS" | tr '\n' ' ' | cut -c1-500)"
+          awk -F'\t' '{ last[$1] = $2 } END { for (k in last) print k "\t" last[k] }' "$EXPECTED" > "$LISTED"
+          mv "$LISTED" "$EXPECTED"
+        fi
+
+        if ! aws s3 ls "${DEST}/" --recursive --endpoint-url "${ENDPOINT}" > "$LISTED"; then
+          echo "::error::could not list ${DEST} to verify the upload"
+          exit 1
+        fi
+        MISSING="$(LC_ALL=C comm -23 <(LC_ALL=C sort "$EXPECTED") \
+          <(awk '{ s = $3; sub(/^[^ ]+ +[^ ]+ +[0-9]+ /, ""); print $0 "\t" s }' "$LISTED" | LC_ALL=C sort))"
+        if [ -n "$MISSING" ]; then
+          echo "::error::aws reported success, but $(printf '%s\n' "$MISSING" | wc -l | tr -d ' ') file(s) are not in ${DEST} at their local size"
+          printf '%s\n' "$MISSING" | head -20
+          exit 1
         fi
 
         # The clickable artifact link is gone, so print where things landed.
