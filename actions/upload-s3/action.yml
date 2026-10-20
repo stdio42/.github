@@ -30,10 +30,18 @@ inputs:
     description: 'warn | error | ignore — mirrors actions/upload-artifact.'
     required: false
     default: 'warn'
+  per-attempt:
+    description: >-
+      'true' keys the upload by run attempt, <run_id>/attempt-<N>/<name>/, so a
+      re-run cannot overwrite what an earlier attempt stored, and fails if that
+      prefix already holds objects. Default 'false' keeps <run_id>/<name>/, which
+      existing download paths are built on.
+    required: false
+    default: 'false'
 
 outputs:
   s3-uri:
-    description: 'The s3:// prefix the files were written to.'
+    description: 'The s3:// prefix the files were written to. Read this rather than rebuilding the key.'
     value: ${{ steps.upload.outputs.s3-uri }}
 
 runs:
@@ -91,6 +99,7 @@ runs:
         BUCKET: ${{ inputs.bucket }}
         ENDPOINT: ${{ inputs.endpoint }}
         ON_MISSING: ${{ inputs.if-no-files-found }}
+        PER_ATTEMPT: ${{ inputs.per-attempt }}
         # With no region configured, aws-cli v2 asks the EC2 metadata service
         # for one on every client it builds -- 2 s of connect timeouts each,
         # ~6 s per `aws s3` call on our runners, for an endpoint that is not AWS.
@@ -106,7 +115,18 @@ runs:
 
         # Same layout as the pre-existing hand-rolled uploads in r2d2-solidworks,
         # plus the artifact name so one run's separate artifacts stay separate.
-        PREFIX="${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${IN_NAME}"
+        # A re-run keeps GITHUB_RUN_ID, so the legacy key lets attempt 2 overwrite
+        # attempt 1's evidence. per-attempt adds the attempt; it is opt-in because
+        # consumers (e.g. Navit's deploy-device) build the legacy key themselves.
+        case "${PER_ATTEMPT}" in
+          true)
+            case "${GITHUB_RUN_ATTEMPT:-}" in
+              ''|*[!0-9]*) echo "::error::per-attempt needs a numeric GITHUB_RUN_ATTEMPT (got '${GITHUB_RUN_ATTEMPT:-}')"; exit 1 ;;
+            esac
+            PREFIX="${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/attempt-${GITHUB_RUN_ATTEMPT}/${IN_NAME}" ;;
+          false) PREFIX="${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${IN_NAME}" ;;
+          *) echo "::error::per-attempt must be 'true' or 'false' (got '${PER_ATTEMPT}')"; exit 1 ;;
+        esac
         DEST="s3://${BUCKET}/${PREFIX}"
         echo "s3-uri=${DEST}" >> "$GITHUB_OUTPUT"
 
@@ -159,6 +179,25 @@ runs:
         LISTED="$(mktemp "${RUNNER_TEMP:-/tmp}/upload-s3.XXXXXX")"
         trap 'rm -f "$EXPECTED" "$LISTED"' EXIT
 
+        # An attempt's prefix is write-once, like an upload-artifact name: a second
+        # upload under the same name would mix two file sets, and a leftover object
+        # of the right size would pass the verification below without being ours.
+        # s3api, not `s3 ls`: `s3 ls` exits 1 both for "empty" and for "denied".
+        # ponytail: two jobs racing on one name can both see it empty; give
+        # parallel jobs distinct names, as upload-artifact v4 requires anyway.
+        if [ "${PER_ATTEMPT}" = true ]; then
+          if ! N="$(aws s3api list-objects-v2 --bucket "${BUCKET}" --prefix "${PREFIX}/" \
+                --max-keys 1 --query 'length(Contents || `[]`)' --output text \
+                --endpoint-url "${ENDPOINT}")"; then
+            echo "::error::could not list ${DEST} to check it is unused"
+            exit 1
+          fi
+          if [ "$N" != 0 ]; then
+            echo "::error::${DEST} already holds objects; this attempt uploaded '${IN_NAME}' before. Use a distinct name."
+            exit 1
+          fi
+        fi
+
         rc=0
         for m in "${MATCHES[@]}"; do
           if [ -d "$m" ]; then
@@ -193,8 +232,9 @@ runs:
         # missing response and the error is swallowed. stdio42/jojo's nightly
         # "uploaded" that way (3 x 60 s read timeouts, then success, nothing in
         # the bucket). So check that every file is there at its local size.
-        # ponytail: a re-run attempt shares GITHUB_RUN_ID, so a same-size object
-        # left by the previous attempt would pass; compare ETags if that matters.
+        # ponytail: in the legacy layout a re-run attempt shares the prefix, so a
+        # same-size object left by the previous attempt would pass; per-attempt
+        # closes that by starting from an empty prefix.
         #
         # Files are keyed by basename, so 'out/**/x.log' maps every x.log to one
         # key and the last upload wins. That was already the behaviour; keep it

@@ -130,6 +130,13 @@ Lands at `s3://github-artifacts/<owner>/<repo>/<run_id>/<name>/`, and prints the
 URI as a run annotation since there is no clickable artifact link any more. Pass
 `bucket: public-artifacts` only for output meant to be world-readable.
 
+A re-run keeps the run id, so by default attempt 2 overwrites attempt 1. For
+evidence that must survive re-runs, pass `per-attempt: 'true'`: files land at
+`<run_id>/attempt-<N>/<name>/`, and the step fails if that prefix already holds
+objects (reuse of a name within one attempt). Downstream jobs should read the
+`s3-uri` output instead of rebuilding the key. The default stays as-is because
+existing consumers download from the `<run_id>/<name>/` key directly.
+
 The action installs the aws CLI if the runner or container lacks it (apt/apk/
 dnf/yum/pip/brew), so it works inside the slim `container:` images the navit
 builds use.

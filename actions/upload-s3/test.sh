@@ -28,6 +28,11 @@ if [ "$2" = "ls" ]; then
   done
   exit 0
 fi
+if [ "$1" = "s3api" ]; then # list-objects-v2 --bucket B --prefix P/ ...: print the object count
+  [ -n "${STUB_DENY:-}" ] && { echo "AccessDenied" >&2; exit 254; }
+  d="$STORE/$4/$6"; [ -d "$d" ] && find "$d" -type f | wc -l | tr -d ' ' || echo 0
+  exit 0
+fi
 echo "$*" >> "$CALLS"
 # aws-cli 2.36 after a no-response timeout: exit 0, nothing stored.
 [ -n "${STUB_DROP:-}" ] && exit 0
@@ -48,10 +53,12 @@ echo a > reports/r1.txt; echo b > single.log; echo c > x1.diff; echo d > x2.diff
 echo e > d1/a; echo f > d2/b
 
 fails=0
-run() { # run <name> <path> [if-no-files-found]
+run() { # run <name> <path> [if-no-files-found]; KEEP=1 keeps the bucket from the last run
   export CALLS="$TMP/calls.log"; : > "$CALLS"
-  export STORE="$TMP/store"; rm -rf "$STORE"
+  export STORE="$TMP/store"; [ -n "${KEEP:-}" ] || rm -rf "$STORE"
+  : > "$TMP/out"
   PATH="$TMP/bin:$PATH" GITHUB_REPOSITORY=o/r GITHUB_RUN_ID=1 GITHUB_OUTPUT="$TMP/out" \
+  GITHUB_RUN_ATTEMPT="${ATTEMPT-1}" PER_ATTEMPT="${PER:-false}" \
   AWS_ACCESS_KEY_ID=k AWS_SECRET_ACCESS_KEY=s BUCKET=b ENDPOINT=https://e RUNNER_TEMP="$TMP" \
   IN_NAME="$1" IN_PATH="$2" ON_MISSING="${3:-warn}" bash "$TMP/upload.sh" >/dev/null 2>&1
   RC=$?
@@ -94,6 +101,35 @@ ok "$(python3 -c "
 import yaml
 print(yaml.safe_load(open('$HERE/action.yml'))['runs']['steps'][1]['env'].get('AWS_EC2_METADATA_DISABLED'))
 ")" true "IMDS lookups are off (aws-cli v2 spends ~6 s on them per call)"
+
+# Re-runs. GitHub keeps GITHUB_RUN_ID and bumps GITHUB_RUN_ATTEMPT.
+echo attempt1 > evidence.txt
+run art evidence.txt
+ok "$(cat "$TMP/out")" "s3-uri=s3://b/o/r/1/art" "default keeps the legacy key old consumers download from"
+echo attempt-two > evidence.txt
+KEEP=1 ATTEMPT=2 run art evidence.txt
+ok "$RC/$(cat "$TMP/store/b/o/r/1/art/evidence.txt")" 0/attempt-two "default re-run still overwrites in place, as before"
+
+echo attempt1 > evidence.txt
+PER=true run art evidence.txt
+ok "$RC/$(cat "$TMP/out")" "0/s3-uri=s3://b/o/r/1/attempt-1/art" "per-attempt keys attempt 1 and reports it in s3-uri"
+echo attempt-two > evidence.txt
+KEEP=1 PER=true ATTEMPT=2 run art evidence.txt
+ok "$RC/$(cat "$TMP/out")" "0/s3-uri=s3://b/o/r/1/attempt-2/art" "per-attempt attempt 2 of the same run gets its own prefix"
+ok "$(cat "$TMP/store/b/o/r/1/attempt-1/art/evidence.txt")/$(cat "$TMP/store/b/o/r/1/attempt-2/art/evidence.txt")" \
+  attempt1/attempt-two "both attempts' evidence survives, distinguishable"
+KEEP=1 PER=true ATTEMPT=2 run art evidence.txt
+ok "$RC/$(wc -l < "$TMP/calls.log")" 1/0 "per-attempt refuses a second upload into the same attempt's prefix"
+KEEP=1 PER=true ATTEMPT=2 run other evidence.txt
+ok "$RC" 0 "a different name in the same attempt is fine"
+KEEP=1 PER=true ATTEMPT=3 run art reports
+ok "$RC/$(find "$TMP/store/b/o/r/1/attempt-3/art" -type f | wc -l | tr -d ' ')" 0/4 "per-attempt directory keeps its whole tree"
+STUB_DROP=1 PER=true run art reports
+ok "$RC" 1 "per-attempt still fails when aws stores nothing"
+STUB_DENY=1 PER=true run art evidence.txt
+ok "$RC/$(wc -l < "$TMP/calls.log")" 1/0 "per-attempt fails, uploading nothing, if it cannot check the prefix"
+PER=true ATTEMPT= run art evidence.txt;   ok "$RC" 1 "per-attempt without GITHUB_RUN_ATTEMPT fails"
+PER=yes run art evidence.txt;             ok "$RC" 1 "per-attempt rejects values other than true/false"
 
 run art 'no-such-*' error;  ok "$RC" 1 "if-no-files-found=error fails the step"
 run art 'no-such-*' ignore; ok "$RC" 0 "if-no-files-found=ignore passes"
