@@ -163,7 +163,10 @@ jobs:
           allowed_bots: ${{ inputs.allowed-bots }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
-          track_progress: true
+          # The action rejects track_progress on `edited` events ("only supported for
+          # opened, synchronize, ready_for_review, reopened, labeled"), so a caller that
+          # re-reviews body edits (the gates read the body) gets a plain review there.
+          track_progress: ${{ github.event.action != 'edited' }}
           use_sticky_comment: true
           claude_args: '--allowedTools "${{ inputs.allowed-tools }}" ${{ inputs.claude-args }}'
           prompt: ${{ steps.assemble.outputs.text }}
