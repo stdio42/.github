@@ -1,5 +1,18 @@
 # stdio42/.github
 
+## Start here for every stdio42 project
+
+Read [AGENTS.md](AGENTS.md) and the [organization CI policy](docs/ci-policy.md)
+before working on a project or diagnosing its CI. **Self-hosted runners only;
+organization S3 artifacts only. No GitHub-hosted runner exceptions.**
+
+Install the durable repository-local reminder and policy caller with
+`python3 scripts/bootstrap_ci.py /path/to/project --apply`. GitHub does not
+inherit AGENTS.md across repositories, and chat memory is not assumed.
+The policy document links the existing Apple/mobile/fleet repositories, reusable
+Node and policy workflows, templates, expression validation and ruleset rollout.
+
+
 Org-wide defaults. The two workflows here are **reusable** (`on: workflow_call`)
 — they do nothing on their own; repos call them.
 

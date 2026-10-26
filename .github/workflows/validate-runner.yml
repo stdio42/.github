@@ -1,0 +1,35 @@
+name: Validate self-hosted runner selection
+on:
+  workflow_call:
+    inputs:
+      labels:
+        required: true
+        type: string
+    outputs:
+      labels:
+        value: ${{ jobs.validate.outputs.labels }}
+jobs:
+  validate:
+    runs-on: [self-hosted, linux]
+    permissions:
+      contents: read
+    outputs:
+      labels: ${{ steps.check.outputs.labels }}
+    steps:
+      - id: check
+        name: Reject hosted or ambiguous routing before scheduling the build
+        env:
+          RUNNER_LABELS: ${{ inputs.labels }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          labels = json.loads(os.environ['RUNNER_LABELS'])
+          if not isinstance(labels, list) or not labels or not all(isinstance(x, str) and x.strip() for x in labels):
+              raise SystemExit('Runner labels must be a nonempty JSON array of strings')
+          normalized = {x.lower() for x in labels}
+          if 'self-hosted' not in normalized or not normalized.intersection({'linux', 'macos', 'windows'}):
+              raise SystemExit('Only self-hosted runners with explicit OS labels are permitted')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('labels=' + json.dumps(labels, separators=(',', ':')) + '\n')
+          PY

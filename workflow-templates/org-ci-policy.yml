@@ -1,0 +1,13 @@
+name: Organization CI policy
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: org-ci-policy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  policy:
+    uses: stdio42/.github/.github/workflows/ci-policy.yml@main
