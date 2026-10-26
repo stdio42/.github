@@ -20,13 +20,23 @@ on:
         required: true
 
 jobs:
+  runner-policy:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    uses: ./.github/workflows/validate-runner.yml
+    with:
+      labels: ${{ inputs.runs-on }}
   claude:
     if: |
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
-    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    needs: runner-policy
+    runs-on: ${{ fromJSON(needs.runner-policy.outputs.labels) }}
     permissions:
       contents: write
       pull-requests: write
@@ -49,6 +59,13 @@ jobs:
           additional_permissions: |
             actions: read
           prompt: |
+            Before working on any stdio42 repository, read the current shared
+            instructions in stdio42/.github/AGENTS.md and docs/ci-policy.md using
+            the GitHub API. Consult the listed shared CI repositories before
+            creating or changing workflows. Use only self-hosted runners with
+            explicit OS labels and organization S3 artifacts; never use a hosted
+            runner fallback or treat billing changes as a remedy for routing.
+
             Follow and complete this request:
             ${{ github.event.comment.body || github.event.review.body || github.event.issue.body || github.event.issue.title }}
 

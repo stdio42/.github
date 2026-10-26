@@ -52,3 +52,12 @@ nothing.
   future bug.
 - Flag a PR description that claims verification which the diff or CI does not
   show.
+
+## Organization CI policy
+- Every job must use self-hosted runners with explicit OS labels. No hosted
+  exceptions or fallback for queued jobs, including public repositories.
+- Read `stdio42/.github/AGENTS.md` and `docs/ci-policy.md` before reviewing CI.
+- Reject GitHub upload/download-artifact actions; use the organization S3 actions.
+- Dynamic runner inputs must be validated by a prerequisite before the build
+  schedules. A safe default alone is insufficient. Prefer shared workflows and
+  repository-local agent pointers installed with the org bootstrap script.

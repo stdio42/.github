@@ -59,8 +59,13 @@ on:
         required: true
 
 jobs:
+  runner-policy:
+    uses: ./.github/workflows/validate-runner.yml
+    with:
+      labels: ${{ inputs.runs-on }}
   claude-review:
-    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    needs: runner-policy
+    runs-on: ${{ fromJSON(needs.runner-policy.outputs.labels) }}
     permissions:
       contents: read
       pull-requests: write

@@ -1,0 +1,54 @@
+name: Shared Node checks
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '22'
+      working-directory:
+        type: string
+        default: '.'
+      checks:
+        description: Repository-specific commands after npm ci; override only in trusted workflow code.
+        type: string
+        default: 'npm run lint && npm test && npm run build'
+      playwright:
+        type: boolean
+        default: false
+    secrets:
+      S3_ACCESS_KEY:
+        required: false
+      S3_SECRET_KEY:
+        required: false
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      - run: npm ci
+      - if: inputs.playwright
+        run: npx playwright install chromium
+      - name: Repository checks
+        env:
+          CHECK_COMMANDS: ${{ inputs.checks }}
+        run: bash -e -o pipefail -c "$CHECK_COMMANDS"
+      - uses: stdio42/.github/actions/upload-s3@main
+        if: failure() && inputs.playwright
+        with:
+          name: browser-test-results
+          path: ${{ inputs.working-directory }}/test-results/
+          access-key-id: ${{ secrets.S3_ACCESS_KEY }}
+          secret-access-key: ${{ secrets.S3_SECRET_KEY }}

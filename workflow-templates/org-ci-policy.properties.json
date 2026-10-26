@@ -1,0 +1,5 @@
+{
+  "name": "stdio42 CI policy",
+  "description": "Check self-hosted runner routing and S3 artifact policy. Also install the repository-local AGENTS.md pointer using bootstrap_ci.py.",
+  "categories": ["continuous-integration"]
+}
