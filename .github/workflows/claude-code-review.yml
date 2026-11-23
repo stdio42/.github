@@ -60,6 +60,8 @@ on:
 
 jobs:
   claude-review:
+    # This reusable workflow also has callers outside the organization.
+    if: github.repository_owner != 'stdio42'
     runs-on: ${{ fromJSON(inputs.runs-on) }}
     permissions:
       contents: read
