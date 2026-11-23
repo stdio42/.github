@@ -5,7 +5,6 @@ Org-wide defaults. The two workflows here are **reusable** (`on: workflow_call`)
 
     .github/workflows/claude-code-review.yml   PR review (reusable)
     .github/workflows/claude.yml               @claude responder (reusable)
-    .github/workflows/self-review.yml          runs the above on this repo's own PRs
     review/prompt.md                           what the reviewer is told to do
     review/core.md                             rules applied to every repo
     review/ios.md                              stack overlay: iOS / tvOS
@@ -15,7 +14,9 @@ This repo is **public**, which is load-bearing: a caller's default `GITHUB_TOKEN
 can read it, so the rulesets are real files fetched at review time instead of a
 heredoc copy-pasted into every consumer.
 
-## Wiring up a repo
+## Pull request review
+
+stdio42 has retired automatic Claude Code pull request review. The reusable reviewer runs only for callers outside stdio42. The following example is for those callers.
 
 `.github/workflows/claude-code-review.yml`:
 
@@ -32,6 +33,8 @@ jobs:
     with:
       stack: flutter        # omit for core rules only
 ```
+
+## Interactive responder
 
 `.github/workflows/claude.yml`:
 
@@ -75,7 +78,7 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo stdio42/<repo>
 | `require-checklist-complete` | `false` | Blocking gate: every task-list item checked. |
 | `allowed-bots` | `''` | Bot actors whose PRs may be reviewed, or `*` for all. **Set to `github-actions` in any repo that also runs `claude.yml`** — see below. |
 
-## Running both workflows in one repo
+## External repositories running both workflows
 
 A repo that runs `claude.yml` alongside `claude-code-review.yml` has a gap by
 default: PRs the responder opens are authored by `app/github-actions`, and the
